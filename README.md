@@ -1,10 +1,10 @@
 # FastAPI Webhook Automation
 
-A lightweight backend service that receives, validates, and forwards data between systems — the kind of small, focused integration that replaces manual copy-paste work or an expensive no-code subscription.
+A lightweight backend service that receives, validates, and forwards data between systems the kind of small, focused integration that replaces manual copy paste work or an expensive no-code subscription.
 
 ## The Problem
 
-Many small businesses have two or more tools that should talk to each other automatically but don't — a payment happens in one system, and someone has to manually update a spreadsheet or CRM. This project demonstrates a clean way to close that gap: a webhook receiver that validates incoming data, processes it safely, and forwards it to where it needs to go.
+Many small businesses have two or more tools that should talk to each other automatically but don't a payment happens in one system, and someone has to manually update a spreadsheet or CRM. This project demonstrates a clean way to close that gap: a webhook receiver that validates incoming data, processes it safely, and forwards it to where it needs to go.
 
 ## Who This Is For
 
@@ -25,21 +25,27 @@ Anyone who needs to:
 
 ## Architecture
 External Service
+
 ↓ (webhook fires)
 
 FastAPI endpoint
+
 ↓
 
 Validate payload (Pydantic)
+
 ↓
 
 Check for duplicate event ID
+
 ↓
 
 Process (store in DB / forward to another system)
+
 ↓
 
 Log outcome
+
 ↓
 
 Return response (200 / 4xx / 5xx)
@@ -68,7 +74,7 @@ curl -X POST http://127.0.0.1:8000/webhook \
   -d '{"event_id": "evt_001", "type": "payment.success", "amount": 49.99}'
 ```
 
-Sending the same `event_id` twice will be detected and rejected as a duplicate — this is intentional, and demonstrates the duplicate-protection logic.
+Sending the same `event_id` twice will be detected and rejected as a duplicate  this is intentional, and demonstrates the duplicate-protection logic.
 
 ## Testing
 
@@ -80,14 +86,14 @@ Tests cover: valid requests, invalid/missing fields, duplicate events, and simul
 
 ## Limitations
 
-This is a demonstration architecture using SQLite and a single endpoint for clarity. A production deployment would typically add: authentication/signature verification on incoming webhooks, a production-grade database, retry/backoff logic for downstream calls, and monitoring/alerting — all of which I scope based on the client's actual systems.
+This is a demonstration architecture using SQLite and a single endpoint for clarity. A production deployment would typically add: authentication/signature verification on incoming webhooks, a production-grade database, retry/backoff logic for downstream calls, and monitoring/alerting  all of which I scope based on the client's actual systems.
 
 ## What I Learned
 
-The tricky part of webhook handling usually isn't the "happy path" — it's the edge cases: what happens when the same event arrives twice, what happens when the downstream system is briefly unavailable, and how you make failures visible instead of silent.
+The tricky part of webhook handling usually isn't the "happy path"  it's the edge cases: what happens when the same event arrives twice, what happens when the downstream system is briefly unavailable, and how you make failures visible instead of silent.
 
 ## Need Two Systems Connected?
 
-If you have two tools that should sync automatically but currently require manual work, send me the two systems and a sample payload — I'll map out the simplest reliable integration and give you a fixed price and timeline.
+If you have two tools that should sync automatically but currently require manual work, send me the two systems and a sample payload I'll map out the simplest reliable integration and give you a fixed price and timeline.
 
 📬 [LinkedIn](https://ke.linkedin.com/in/charles-mburu-838965382) · [X](https://x.com/KariukiBuilds__)
