@@ -1,99 +1,161 @@
 # FastAPI Webhook Automation
 
-A lightweight backend service that receives, validates, and forwards data between systems the kind of small, focused integration that replaces manual copy paste work or an expensive no-code subscription.
+A secure webhook receiver that verifies every request is genuine, rejects
+duplicate deliveries, validates payload shape, and forwards clean data
+downstream — the core pattern behind reliably connecting tools like
+Stripe, Shopify, or a CRM without losing data to spoofed requests,
+re-sent events, or silent failures.
 
-## The Problem
+## What problem does this solve?
 
-Many small businesses have two or more tools that should talk to each other automatically but don't a payment happens in one system, and someone has to manually update a spreadsheet or CRM. This project demonstrates a clean way to close that gap: a webhook receiver that validates incoming data, processes it safely, and forwards it to where it needs to go.
+Three separate, expensive failure modes, all handled by this one
+service:
 
-## Who This Is For
+1. **Spoofing.** A public webhook URL can be found and hit by anyone.
+   Without signature verification, an attacker can fake a
+   "payment succeeded" event and trigger real business actions.
 
-Anyone who needs to:
-- Receive webhook events from a service (e.g. a payment or order notification)
-- Validate incoming data before acting on it
-- Prevent duplicate processing of the same event
-- Forward or store the result automatically (database, another API, a notification)
+2. **Double-processing.** Webhook providers frequently re-send the
+   exact same event because of network retries. Without deduplication,
+   this can cause duplicate business actions.
 
-## Features
-
-- **FastAPI webhook receiver** — fast, well-documented, production-style structure
-- **Payload validation** — using Pydantic, so malformed or incomplete data is rejected cleanly, not silently accepted
-- **Duplicate event protection** — stores event IDs so the same webhook firing twice doesn't cause double-processing
-- **Database storage** — validated events are saved (SQLite for local demo, easily swapped for Postgres in production)
-- **Logging** — every event, success, and failure is logged for traceability
-- **Error handling** — clear, correct HTTP status codes for valid, invalid, and failed requests
+3. **Malformed data.** A field renamed or a type changed on the
+   provider's end can otherwise cause an unhandled error. Pydantic
+   validation ensures invalid payloads fail cleanly.
 
 ## Architecture
-External Service
 
-↓ (webhook fires)
+```text
+Provider (Stripe/Shopify/etc.)
+        |
+        v
+  POST /webhook
+        |
+        v
+  HMAC signature check --(invalid)--> 401 Unauthorized
+        |
+      (valid)
+        |
+        v
+  Pydantic validation --(invalid)--> 422 Unprocessable Content
+        |
+      (valid)
+        |
+        v
+  Duplicate check (SQLite, WAL mode)
+        |
+   (seen before) ------------------> 200 duplicate_ignored
+        |
+       (new)
+        |
+        v
+  Forward downstream + log + mark processed
+        |
+        v
+  200 processed
 
-FastAPI endpoint
+  The security check runs first and rejects forged requests before payload
+validation. This means a request that is both forged and malformed fails
+on the signature check with 401, rather than exposing payload validation
+details.
 
-↓
-
-Validate payload (Pydantic)
-
-↓
-
-Check for duplicate event ID
-
-↓
-
-Process (store in DB / forward to another system)
-
-↓
-
-Log outcome
-
-↓
-
-Return response (200 / 4xx / 5xx)
-
-## Installation
-
-```bash
-git clone https://github.com/CharlesKariuki-001/fastapi-webhook-automation.git
-cd fastapi-webhook-automation
+Features
+FastAPI webhook receiver
+HMAC-SHA256 signature verification
+Pydantic payload validation
+Duplicate event protection
+SQLite persistence with WAL mode
+Structured error handling
+Logging and traceability
+Automated test coverage
+Dependency-based security checks using FastAPI Depends()
+Modern FastAPI lifespan startup
+Installation
 python -m venv .venv
-source .venv/bin/activate      # Windows: .venv\Scripts\activate
+.venv\Scripts\activate
 pip install -r requirements.txt
-```
+copy .env.example .env
 
-## Running Locally
+Then edit .env and set a real WEBHOOK_SECRET.
 
-```bash
-uvicorn src.main:app --reload
-```
+Running it
+uvicorn app.main:app --reload
 
-Then send a test webhook:
+The API will be available at:
 
-```bash
+http://127.0.0.1:8000
+Usage
+
+A genuine request must include a matching HMAC-SHA256 signature of the
+raw request body, computed using your WEBHOOK_SECRET, and sent in the
+X-Webhook-Signature header.
+
+Example:
+
 curl -X POST http://127.0.0.1:8000/webhook \
   -H "Content-Type: application/json" \
-  -d '{"event_id": "evt_001", "type": "payment.success", "amount": 49.99}'
-```
+  -H "X-Webhook-Signature: <hmac-sha256-of-the-body>" \
+  -d '{"event_id": "evt_123", "event_type": "order.created", "data": {"amount": 100}}'
+Testing
 
-Sending the same `event_id` twice will be detected and rejected as a duplicate  this is intentional, and demonstrates the duplicate-protection logic.
+Run:
 
-## Testing
+pytest -v
 
-```bash
-pytest
-```
+The test suite contains 7 tests covering:
 
-Tests cover: valid requests, invalid/missing fields, duplicate events, and simulated downstream failures.
+Health check
+Forged signature rejection
+Missing signature rejection
+Genuine event processing
+Duplicate event detection
+Malformed payload rejection
+Security ordering: forged + malformed requests must fail on the
+signature check before payload validation
+Error handling
+401 — missing or invalid X-Webhook-Signature
+422 — valid signature but invalid payload
+200 duplicate_ignored — previously processed event
+200 processed — new, valid, genuine event
+500 — downstream forwarding failure
+Project structure
+fastapi-webhook-automation/
+├── app/
+│   ├── __init__.py
+│   ├── database.py
+│   ├── main.py
+│   ├── models.py
+│   └── security.py
+├── tests/
+│   └── test_webhook.py
+├── docs/
+├── .env.example
+├── .gitignore
+├── README.md
+└── requirements.txt
+Limitations
 
-## Limitations
+This project uses SQLite with WAL mode and a simulated downstream call.
 
-This is a demonstration architecture using SQLite and a single endpoint for clarity. A production deployment would typically add: authentication/signature verification on incoming webhooks, a production-grade database, retry/backoff logic for downstream calls, and monitoring/alerting  all of which I scope based on the client's actual systems.
+A production deployment would typically use the client's production
+database and target system, plus retry/backoff logic, monitoring, and
+possibly a process-safe queue when running multiple server workers.
 
-## What I Learned
+The HMAC-SHA256 approach is a general webhook security pattern, but
+individual providers such as Stripe, Shopify, or GitHub have their own
+exact signing formats and headers.
 
-The tricky part of webhook handling usually isn't the "happy path"  it's the edge cases: what happens when the same event arrives twice, what happens when the downstream system is briefly unavailable, and how you make failures visible instead of silent.
+What I learned building this
 
-## Need Two Systems Connected?
+The most dangerous webhook bugs aren't always crashes. They can be
+requests that are trusted when they shouldn't be, or duplicate requests
+that are processed more than once.
 
-If you have two tools that should sync automatically but currently require manual work, send me the two systems and a sample payload I'll map out the simplest reliable integration and give you a fixed price and timeline.
+Both problems can fail silently unless they are deliberately tested.
+That is why the security-ordering test — forged and malformed together —
+is particularly important.
 
-📬 [LinkedIn](https://ke.linkedin.com/in/charles-mburu-838965382) · [X](https://x.com/KariukiBuilds__)
+Need two systems connected?
+
+Send me the two tools you're using and an example payload. I'll map the
+simplest reliable integration and provide a fixed price and timeline.
